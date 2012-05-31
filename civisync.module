@@ -1,0 +1,321 @@
+<?php
+/** 
+ * Project:     CiviSync: Description of CiviSync module
+ * File:        civisync.module 
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ * 
+ */ 
+ function civisync_help($path, $arg){
+ 	
+ 	switch ($path)
+ 	{
+	 	case 'civisync':
+	 		return '<p>'.t('CiviSync generates a Site Key and API Keys for CiviCRM users').'</p>';
+	 	case 'civisync/all':
+	 		return '<p>'.t('All contacts in your CiviCRM database').'</p>';
+	 	case 'civisync/authorized':
+	 		return '<p>'.t('Displays only Authorized contacts').'</p>';
+ 	}
+}
+ 
+ /**
+* Valid permissions for this module
+* @return array An array of valid permissions for the civisync module
+*/
+function civisync_perm() {
+  return array('access civisync module');
+}
+
+/**
+ * Implementation of hook_block().
+ * @param string $op one of "list", "view", "save" and "configure"
+ * @param integer $delta code to identify the block
+ * @param array $edit only for "save" operation
+*/
+
+
+function civisync_menu(){
+
+  $items = array();
+
+  $items['civisync'] = array(
+    'title' => 'CiviSync',
+    'description' => 'Description of your page',
+    'page callback' => 'system_admin_menu_block_page',
+    'page arguments' => array('civisync_all'),
+    'access arguments' => array('administer users'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+   );
+   foreach(array(t('all'), t('authorized')) as $tabname)
+   {
+	   $items['civisync/'.$tabname] = array(
+	    'title' => ucfirst($tabname).' Contacts',
+	    'description' => ucfirst($tabname).' Contacts of CiviCRM',
+	    'page callback' => 'civisync_main_form',
+	    'page arguments' => array('civisync_all',1),
+	    'access arguments' => array('administer users'),
+	    'type' => MENU_NORMAL_ITEM,
+	    'file' => 'civisync.admin.inc',
+	   );
+	   
+	   $items['civisync/'.$tabname.'/list'] = array(
+	    'title' => 'List',
+	    'page callback' => 'civisync_all',
+	    'type' => MENU_DEFAULT_LOCAL_TASK,
+	    'file' => 'civisync.admin.inc',
+	  );
+	  $items['civisync/'.$tabname.'/remove/%'] = array(
+	    'title' => 'Remove Contact API Key',
+	    'page callback' => 'civisync_main_form',
+	    'page arguments' => array('civisync_all', 1, 2, 3),
+	    'access arguments' => array('administer users'),
+	    'type' => MENU_CALLBACK,
+	    'file' => 'civisync.admin.inc',
+	  );
+	  $items['civisync/'.$tabname.'/add/%'] = array(
+	    'title' => 'Remove Contact API Key',
+	    'page callback' => 'civisync_main_form',
+	    'page arguments' => array('civisync_all', 1, 2, 3),
+	    'access arguments' => array('administer users'),
+	    'type' => MENU_CALLBACK,
+	    'file' => 'civisync.admin.inc',
+	  );
+   }
+
+  return $items;
+}
+
+
+function civisync_hook_info() {
+  return array(
+    'civisync' => array(
+      // One important thing to note here. If you want to use the trigger
+      // module's default menu and forms handlers your hook needs to have the
+      // same name as your module. If you've got the "foo" module with a hook
+      // "hook_fooapi" then you're going to have to implement hook_forms and
+      // map the form ids back to the trigger_assign_form callback.
+      'civisync' => array(
+        'search' => array(
+          'runs when' => t('A search happens'),
+        ),
+        'reset' => array(
+          'runs when' => t('A reset happens'),
+        ),
+        'generate' => array(
+          'runs when' => t('A Site key generated'),
+        ),
+      ),
+    ),
+  );
+}
+
+function civisync_search($value) {
+	
+	module_invoke_all('civisync', 'search', $value);
+	
+	variable_set('civisync_search_keyword', $value);
+
+}
+
+/**
+ * Function to generate pong events and invoke hook_trigger_example().
+ */
+function civisync_generate() {
+  
+	$fileName =  conf_path( ) . '/civicrm.settings.php';
+	
+	$key = _charReplace(md5(uniqid(rand(), true)),'-');
+	
+	$string = civisync_read( $fileName );
+	
+	$replace ="CIVICRM_SITE_KEY', '".$key."' );";
+	
+	$buffer = preg_replace("/CIVICRM_SITE_KEY',(.*?);\n/is",$replace,$string);
+	
+	$ret = file_put_contents($fileName, $buffer);
+	
+}
+
+/**
+ * Implementation of hook_trigger_example().
+ */
+function civisync_trigger_example($op, $count) {
+  // Our module is dependent on the trigger module but other modules that this
+  // code get's copied into might not so it's a good idea to check first.
+  if (!module_exists('trigger')) {
+    break;
+  }
+
+  // Find any the ids of any actions associated with this hook/operation pair.
+  if ($aids = _trigger_get_hook_aids('trigger_example', $op)) {
+    // Setup the context for our trigger.
+    $context = array(
+      'hook' => 'civisync',
+      'op' => $op,
+      'count' => $count
+    );
+
+    // Since we're not operating on an object we need to create a dummy.
+    $dummy = new stdClass();
+    foreach ($aids as $aid => $action_info) {
+      actions_do($aid, $dummy, $context);
+    }
+  }
+}
+
+/**
+* Implementation of hook_action_info_alter().
+*
+* None of the built-in actions will be enabled for our hook by default. We
+* need to implement hook_action_info_alter() so that we can enable a couple.
+*/
+function civisync_action_info_alter(&$info) {
+  if (isset($info['system_message_action']['hooks'])) {
+    $info['system_message_action']['hooks']['civisync'] = array('search', 'generate', 'reset');
+  }
+  if (isset($info['system_send_email_action']['hooks'])) {
+    $info['system_send_email_action']['hooks']['civisync'] = array('search', 'generate', 'reset');
+  }
+}
+
+/**
+ * A form to help fire our triggers.
+ */
+function civisync_form($form_state) {
+   
+  //For searc through email
+  $form['filter'] = array(
+    '#title' => t("Search"),
+    '#prefix' => '<div>',
+    '#suffix' => '</div>',
+    '#type' => 'fieldset',
+    //'#description' => t('This is where we get automatically generated sitekey of CiviCRM'),
+	'#collapsible' => TRUE,
+	'#collapsed' => FALSE,
+  );
+  $form['filter']['searchtitle'] = array(
+  '#type' => 'textfield',
+  '#title' => t('Search Keyword'),
+  '#default_value' => variable_get('civisync_search_keyword', ''),
+  '#size' => 60,
+  '#maxlength' => 128,
+  );
+  
+  $form['filter']['search'] = array(
+    '#type' => 'submit',
+    '#value' => t('Search'),
+  );
+  if (variable_get('civisync_search_keyword', 0)) {
+    $form['filter']['reset'] = array(
+      '#type' => 'submit',
+      '#value' => t('Reset'),
+    );
+  }
+  $key = civisync_getSitekey();
+  //For Site key form
+  $form['sitekey'] = array(
+    '#title' => t("SiteKey"),
+    '#prefix' => '<div>',
+    '#suffix' => '</div>',
+    '#type' => 'fieldset',
+    '#description' => t($key),
+	'#collapsible' => TRUE,
+	'#collapsed' => FALSE,
+  );
+  $form['sitekey']['generate'] = array(
+	    '#type' => 'submit',
+	    '#value' => t('Generate New'),
+  		'#attributes' => array('onclick' => 'return confirm("Are you sure to generate new Site key?");'),
+  );
+
+  return $form;
+}
+
+function civisync_form_submit($form, &$form_state) {
+	
+	switch ($form_state['values']['op'])
+	{
+		case t('Search'):
+				$value = $form_state['values']['searchtitle'];
+				civisync_search($value);
+			break;
+		case t('Reset'):
+				variable_set('civisync_search_keyword', '');
+			break;
+		case t('Generate New'):
+				civisync_generate();
+			break;
+		default:
+	}
+}
+
+function civisync_getSitekey()
+{
+		$fileName =  conf_path( ) . '/civicrm.settings.php';
+		
+		$string = civisync_read( $fileName );
+		
+		$arrSplit  = explode("CIVICRM_SITE_KEY',", $string);
+		
+		$arrSplit  = explode(");", $arrSplit[1]);
+		
+		if(strlen($arrSplit[0])>15) {
+			
+			$arrSplit  = explode("'", $arrSplit[0]);
+
+			$key = $arrSplit[1];
+		}
+		else{
+			$key = 'Click Button to generate New Site Key' ;
+		}
+		
+		return $key;
+	}
+	
+function civisync_read($filename, $incpath = false, $amount = 0, $chunksize = 8192, $offset = 0)
+{
+        // Initialize variables
+        $data = null;
+        if($amount && $chunksize > $amount) { $chunksize = $amount; }
+        if (false === $fh = fopen($filename, 'rb', $incpath)) {
+        		return false;
+        }
+        clearstatcache();
+        if($offset) fseek($fh, $offset);
+        if ($fsize = @ filesize($filename)) {
+                if($amount && $fsize > $amount) {
+                        $data = fread($fh, $amount);
+                } else {
+                        $data = fread($fh, $fsize);
+                }
+        } else {
+                $data = '';
+                $x = 0;
+                // While its:
+                // 1: Not the end of the file AND
+                // 2a: No Max Amount set OR
+                // 2b: The length of the data is less than the max amount we want
+                while (!feof($fh) && (!$amount || strlen($data) < $amount)) {
+                        $data .= fread($fh, $chunksize);
+                }
+        }
+        fclose($fh);
+ 
+        return $data;
+}
+	

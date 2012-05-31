@@ -1,0 +1,7 @@
+name = CiviSync
+description = Description of CiviSync 
+version = 1.0
+package = CiviSync
+core = 7.x
+php = 5.2
+dependencies[] = civicrm

@@ -1,0 +1,41 @@
+<?php
+function civisync_enable()
+{
+	if(include_once(conf_path( ) . '/civicrm.settings.php'))
+	{
+		$db = parse_url(CIVICRM_DSN);
+		$link = new mysqli($db['host'], $db['user'], $db['pass'],substr($db['path'],1)); 
+		$trigger = "DROP TRIGGER IF EXISTS  `Trg_delcontact`;";
+		$link->query($trigger);
+		$trigger = "DROP TRIGGER IF EXISTS  `Trg_InsertEntryForLog`;";
+		$link->query($trigger);
+		$trigger = "DROP TRIGGER IF EXISTS  `Trg_UpdateEntryForLog`;";
+		$link->query($trigger);
+		$trigger = "CREATE TRIGGER Trg_InsertEntryForLog AFTER INSERT ON civicrm_group_contact
+					FOR EACH ROW BEGIN
+					INSERT INTO civicrm_log SET `entity_id` = NEW.contact_id,`entity_table`='civicrm_contact',`data`=CONCAT_WS(',','civicrm_contact',NEW.contact_id),`modified_id` =1,`modified_date`=NOW();
+					END;";
+		$q = $link->multi_query($trigger);
+		$trigger = "CREATE TRIGGER Trg_UpdateEntryForLog AFTER UPDATE ON civicrm_group_contact
+					FOR EACH ROW BEGIN
+					INSERT INTO civicrm_log SET `entity_id` = NEW.contact_id,`entity_table`='civicrm_contact',`data`=CONCAT_WS(',','civicrm_contact',NEW.contact_id),`modified_id` =1,`modified_date`=NOW();
+					END;";
+		$w = $link->multi_query($trigger);
+		$trigger = "CREATE TRIGGER Trg_delcontact AFTER UPDATE ON civicrm_contact
+					FOR EACH ROW BEGIN
+					IF NEW.contact_type = 'Individual' THEN
+					INSERT INTO civicrm_log SET entity_id = NEW.id,entity_table='civicrm_contact',data=CONCAT_WS(',','civicrm_contact',NEW.id),modified_id =1,modified_date=NOW();
+					END IF;
+					END;";
+		$e = $link->multi_query($trigger);
+		//comment this code if you dont want message displayed.
+		if($q && $w && $e)
+		{
+			drupal_set_message(t('Trigger install'));
+		}
+		else
+		{
+			drupal_set_message(t('Error occur in creating Trigger'));
+		}		
+	}
+}
